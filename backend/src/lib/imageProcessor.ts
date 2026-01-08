@@ -15,7 +15,4 @@ export async function flipImageHorizontally(imageBuffer: Buffer): Promise<Buffer
         .toBuffer();
 }
 
-// Get image metadata
-export async function getImageMetadata(imageBuffer: Buffer) {
-    return sharp(imageBuffer).metadata();
-}
+

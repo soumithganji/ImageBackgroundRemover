@@ -44,19 +44,19 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
         const originalBuffer = req.file.buffer;
 
         // Convert to PNG for API compatibility
-        console.log('Converting image to PNG...');
+
         const pngBuffer = await convertToPng(originalBuffer);
 
         // Remove background
-        console.log('Removing background...');
+
         const noBgBuffer = await removeBackground(pngBuffer);
 
         // Flip horizontally
-        console.log('Flipping image...');
+
         const processedBuffer = await flipImageHorizontally(noBgBuffer);
 
         // Upload processed image to GCS
-        console.log('Uploading processed image to GCS...');
+
         const processedFileName = `processed/${imageId}.png`;
         const processedUrl = await uploadImage(processedBuffer, processedFileName, 'image/png');
 
