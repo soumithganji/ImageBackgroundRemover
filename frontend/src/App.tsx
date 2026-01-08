@@ -95,7 +95,10 @@ export default function App() {
         return (
             <div className="app-container">
                 <div className="upload-screen">
-                    <h1 className="logo">Background Remover</h1>
+                    <div className="logo-container">
+                        <div className="logo-img" role="img" aria-label="Background Remover Logo" />
+                        <h1 className="logo">Background Remover</h1>
+                    </div>
                     <p className="tagline">Remove background & flip horizontally</p>
                     <ImageUploader onUpload={handleUpload} error={error} />
                 </div>

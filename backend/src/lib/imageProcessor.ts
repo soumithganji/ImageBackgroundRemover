@@ -10,7 +10,7 @@ export async function convertToPng(imageBuffer: Buffer): Promise<Buffer> {
 // Horizontally flip an image
 export async function flipImageHorizontally(imageBuffer: Buffer): Promise<Buffer> {
     return sharp(imageBuffer)
-        .flop() // flop = horizontal flip, flip = vertical flip
+        .flop()
         .png()
         .toBuffer();
 }
