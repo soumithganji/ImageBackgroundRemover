@@ -7,6 +7,19 @@ function getStorageClient(): Storage {
         throw new Error('GCS_PROJECT_ID environment variable is not set');
     }
 
+    const clientEmail = process.env.GCS_CLIENT_EMAIL;
+    const privateKey = process.env.GCS_PRIVATE_KEY;
+
+    if (clientEmail && privateKey) {
+        return new Storage({
+            projectId,
+            credentials: {
+                client_email: clientEmail,
+                private_key: privateKey.replace(/\\n/g, '\n'), // Handle newlines in env var
+            },
+        });
+    }
+
     return new Storage({ projectId });
 }
 

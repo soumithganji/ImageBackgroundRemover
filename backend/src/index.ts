@@ -169,8 +169,11 @@ app.get('/api/images/:id', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`🚀 Backend server running on http://localhost:${PORT}`);
-});
+// Only start the server if not running on Vercel
+if (!process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`🚀 Backend server running on http://localhost:${PORT}`);
+    });
+}
 
 export default app;
