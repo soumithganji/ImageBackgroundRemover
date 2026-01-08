@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 
-// Convert any image format to PNG for API compatibility
+// Convert any image to PNG 
 export async function convertToPng(imageBuffer: Buffer): Promise<Buffer> {
     return sharp(imageBuffer)
         .png()

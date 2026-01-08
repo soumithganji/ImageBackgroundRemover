@@ -1,11 +1,5 @@
 import { Storage } from '@google-cloud/storage';
 
-// Initialize GCS client using Application Default Credentials (ADC)
-// ADC automatically finds credentials from:
-// 1. GOOGLE_APPLICATION_CREDENTIALS env var
-// 2. gcloud CLI login (local dev)
-// 3. Workload Identity Federation (Vercel/cloud)
-// 4. Compute Engine/Cloud Run default service account
 function getStorageClient(): Storage {
     const projectId = process.env.GCS_PROJECT_ID;
 
@@ -40,7 +34,6 @@ export async function uploadImage(
         },
     });
 
-    // Public access is controlled by bucket-level IAM policy (uniform bucket access)
     // Return public URL
     return `https://storage.googleapis.com/${getBucketName()}/${fileName}`;
 }
@@ -54,7 +47,6 @@ export async function deleteImage(fileName: string): Promise<void> {
     try {
         await file.delete();
     } catch (error: unknown) {
-        // Ignore if file doesn't exist
         if (error && typeof error === 'object' && 'code' in error && error.code !== 404) {
             throw error;
         }
@@ -71,7 +63,7 @@ export async function fileExists(fileName: string): Promise<boolean> {
     return exists;
 }
 
-// Get public URL for a file
+// Get public URL
 export function getPublicUrl(fileName: string): string {
     return `https://storage.googleapis.com/${getBucketName()}/${fileName}`;
 }

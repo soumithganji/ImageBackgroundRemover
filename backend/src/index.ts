@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
-import { removeBackground } from './lib/removebg.js';
+import { removeBackground } from './lib/clipdrop.js';
 import { flipImageHorizontally, convertToPng } from './lib/imageProcessor.js';
 import { uploadImage, deleteImage, fileExists, getPublicUrl } from './lib/storage.js';
 
@@ -15,7 +15,7 @@ const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 25 * 1024 * 1024 }, // 25MB limit
     fileFilter: (_req, file, cb) => {
-        // Accept all image types - Sharp will convert if needed
+
         if (file.mimetype.startsWith('image/')) {
             cb(null, true);
         } else {
@@ -43,7 +43,7 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
         const imageId = uuidv4();
         const originalBuffer = req.file.buffer;
 
-        // Convert to PNG for API compatibility (handles HEIC, BMP, TIFF, etc.)
+        // Convert to PNG for API compatibility
         console.log('Converting image to PNG...');
         const pngBuffer = await convertToPng(originalBuffer);
 
@@ -55,7 +55,7 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
         console.log('Flipping image...');
         const processedBuffer = await flipImageHorizontally(noBgBuffer);
 
-        // Upload only processed image to GCS
+        // Upload processed image to GCS
         console.log('Uploading processed image to GCS...');
         const processedFileName = `processed/${imageId}.png`;
         const processedUrl = await uploadImage(processedBuffer, processedFileName, 'image/png');
@@ -74,7 +74,7 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
     }
 });
 
-// Download processed image (triggers browser download)
+// Download processed image
 app.get('/api/download/:id', async (req, res) => {
     try {
         const imageId = req.params.id;

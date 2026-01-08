@@ -1,4 +1,4 @@
-// Clipdrop API integration for background removal
+// Clipdrop API integration
 export async function removeBackground(imageBuffer: Buffer): Promise<Buffer> {
     const apiKey = process.env.CLIPDROP_API_KEY;
 
