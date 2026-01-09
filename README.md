@@ -1,6 +1,6 @@
 #  Background Remover
 
-A full-stack web application that removes backgrounds from images using AI and optionally flips them horizontally. Built with a modern tech stack featuring React 19, TypeScript, and Express.
+A full-stack web application that removes backgrounds from images using AI and flips them horizontally. Built with a modern tech stack featuring React 19, TypeScript, and Express.
 
 ##  Try It Here
 
