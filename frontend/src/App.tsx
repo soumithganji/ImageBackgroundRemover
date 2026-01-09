@@ -16,12 +16,14 @@ export default function App() {
     const [error, setError] = useState<string | null>(null);
     const [showOriginal, setShowOriginal] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
     const handleUpload = useCallback(async (file: File) => {
+        const originalUrl = URL.createObjectURL(file);
+        setPreviewUrl(originalUrl);
         setIsUploading(true);
         setError(null);
 
-        const originalUrl = URL.createObjectURL(file);
         const formData = new FormData();
         formData.append('image', file);
 
@@ -43,10 +45,12 @@ export default function App() {
                 processedUrl: data.processedUrl,
                 originalName: file.name,
             });
+            setPreviewUrl(null);
         } catch (err) {
             const message = err instanceof Error ? err.message : 'Failed to upload image';
             setError(message);
             URL.revokeObjectURL(originalUrl);
+            setPreviewUrl(null);
         } finally {
             setIsUploading(false);
         }
@@ -94,7 +98,7 @@ export default function App() {
     }, [imageData]);
 
     // Upload Screen
-    if (!imageData && !isUploading) {
+    if (!imageData && !isUploading && !previewUrl) {
         return (
             <div className="app-container">
                 <div className="upload-screen">
@@ -104,18 +108,6 @@ export default function App() {
                     </div>
                     <p className="tagline">Remove background & flip horizontally</p>
                     <ImageUploader onUpload={handleUpload} error={error} />
-                </div>
-            </div>
-        );
-    }
-
-    // Loading Screen
-    if (isUploading) {
-        return (
-            <div className="app-container">
-                <div className="loading-screen">
-                    <div className="spinner" />
-                    <p>Processing...</p>
                 </div>
             </div>
         );
@@ -174,18 +166,27 @@ export default function App() {
 
             {/* Main Image */}
             <main className="image-view">
-                <div className="image-wrapper">
+                <div className={`image-wrapper ${isUploading ? 'processing' : ''}`}>
                     <img
-                        src={showOriginal ? imageData?.originalUrl : imageData?.processedUrl}
-                        alt={showOriginal ? "Original" : "Processed"}
+                        src={isUploading ? previewUrl! : (showOriginal ? imageData?.originalUrl : imageData?.processedUrl)}
+                        alt={isUploading ? "Processing" : (showOriginal ? "Original" : "Processed")}
+                        className={isUploading ? 'faded' : ''}
                     />
+                    {isUploading && (
+                        <div className="processing-overlay">
+                            <div className="processing-content">
+                                <div className="spinner"></div>
+                                <p className="processing-text">Processing...</p>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </main>
 
             {/* Bottom indicator */}
             <footer className="bottom-bar">
                 <span className="image-label">
-                    {showOriginal ? 'Original' : '✨ Background Removed & Flipped'}
+                    {isUploading ? 'Processing your image...' : (showOriginal ? 'Original' : '✨ Background Removed & Flipped')}
                 </span>
             </footer>
         </div>

@@ -1,6 +1,3 @@
-// Direct GCS API implementation using fetch - bypasses google-cloud/storage library
-// to avoid auth library compatibility issues with Vercel OIDC
-
 // Check if running in Vercel serverless environment
 function isVercelEnvironment(): boolean {
     return !!process.env.VERCEL;
