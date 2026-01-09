@@ -15,6 +15,7 @@ export default function App() {
     const [isUploading, setIsUploading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showOriginal, setShowOriginal] = useState(false);
+    const [copied, setCopied] = useState(false);
 
     const handleUpload = useCallback(async (file: File) => {
         setIsUploading(true);
@@ -85,6 +86,8 @@ export default function App() {
         if (!imageData) return;
         try {
             await navigator.clipboard.writeText(imageData.processedUrl);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
         } catch {
             // Ignore copy errors
         }
@@ -146,12 +149,15 @@ export default function App() {
                 </button>
 
                 <div className="action-buttons">
-                    <button className="icon-btn" onClick={handleCopy} title="Copy URL">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <rect x="9" y="9" width="13" height="13" rx="2" />
-                            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                        </svg>
-                    </button>
+                    <div className="copy-btn-wrapper">
+                        <button className="icon-btn" onClick={handleCopy} title="Copy URL">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" />
+                                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                            </svg>
+                        </button>
+                        {copied && <span className="copied-popup">URL copied</span>}
+                    </div>
                     <button className="icon-btn" onClick={handleDelete} title="Delete">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />

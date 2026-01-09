@@ -167,6 +167,49 @@ body {
   height: 20px;
 }
 
+.copy-btn-wrapper {
+  position: relative;
+}
+
+.copied-popup {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  padding: 6px 12px;
+  background: #22c55e;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 6px;
+  white-space: nowrap;
+  animation: fadeInUp 0.2s ease;
+  z-index: 10;
+}
+
+.copied-popup::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-bottom-color: #22c55e;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
 /* Toggle Button specific styles - must come after icon-btn */
 .toggle-btn {
   margin-left: auto;
