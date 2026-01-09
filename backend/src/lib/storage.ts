@@ -1,50 +1,62 @@
 import { Storage } from '@google-cloud/storage';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
+import { ExternalAccountClient } from 'google-auth-library';
 
-// Cache the storage instance
-let storageInstance: Storage | null = null;
+// Check if running in Vercel serverless environment
+function isVercelEnvironment(): boolean {
+    return !!process.env.VERCEL;
+}
 
 async function getStorageClient(): Promise<Storage> {
-    if (storageInstance) return storageInstance;
-
     const projectId = process.env.GCS_PROJECT_ID;
 
     if (!projectId) {
         throw new Error('GCS_PROJECT_ID environment variable is not set');
     }
 
-    // Workload Identity / Credentials Strategy for Vercel:
-    // 1. Read JSON from Env Var
-    // 2. Write to /tmp file
-    // 3. Pass keyFilename explicitly to Storage constructor
-    const googleCredentials = process.env.GOOGLE_CREDENTIALS;
-    if (googleCredentials) {
-        try {
-            const tmpDir = os.tmpdir();
-            const keyFilePath = path.join(tmpDir, 'gcp-credentials.json');
+    // Workload Identity Federation for Vercel
+    if (isVercelEnvironment()) {
+        const serviceAccountEmail = process.env.GCS_SERVICE_ACCOUNT_EMAIL;
+        const workloadIdentityProvider = process.env.GCS_WORKLOAD_IDENTITY_POOL_PROVIDER;
 
-            // Only write if not already there or to overwrite potential stale data
-            fs.writeFileSync(keyFilePath, googleCredentials);
-            console.log(`✓ Wrote credentials to ${keyFilePath}`);
-
-            storageInstance = new Storage({
-                projectId,
-                keyFilename: keyFilePath
-            });
-            return storageInstance;
-
-        } catch (error) {
-            console.error('❌ Failed to write credentials file:', error);
+        if (!serviceAccountEmail || !workloadIdentityProvider) {
+            throw new Error(
+                'Missing WIF config: GCS_SERVICE_ACCOUNT_EMAIL and GCS_WORKLOAD_IDENTITY_POOL_PROVIDER are required in Vercel'
+            );
         }
-    } else {
-        console.log('⚠️ GOOGLE_CREDENTIALS env var not found, relying on default environment setup...');
+
+        // Dynamically import @vercel/oidc to avoid issues in local dev
+        const { getVercelOidcToken } = await import('@vercel/oidc');
+
+        // Create auth client with subject token supplier
+        const authClient = ExternalAccountClient.fromJSON({
+            type: 'external_account',
+            audience: `//iam.googleapis.com/${workloadIdentityProvider}`,
+            subject_token_type: 'urn:ietf:params:oauth:token-type:jwt',
+            token_url: 'https://sts.googleapis.com/v1/token',
+            service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:generateAccessToken`,
+            subject_token_supplier: {
+                getSubjectToken: async () => {
+                    return await getVercelOidcToken();
+                },
+            },
+        });
+
+        if (!authClient) {
+            throw new Error('Failed to create ExternalAccountClient');
+        }
+
+        console.log('✓ Initialized GCS with Workload Identity Federation');
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return new Storage({
+            projectId,
+            authClient: authClient as any,
+        });
     }
 
-    // Fallback standard initialization (ADC)
-    storageInstance = new Storage({ projectId });
-    return storageInstance;
+    // Local development: use Application Default Credentials (ADC)
+    console.log('⚡ Using Application Default Credentials (local dev)');
+    return new Storage({ projectId });
 }
 
 function getBucketName(): string {
