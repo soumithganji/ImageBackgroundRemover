@@ -17,8 +17,8 @@ async function getStorageClient(): Promise<Storage> {
 
     // Workload Identity / Credentials Strategy for Vercel:
     // 1. Read JSON from Env Var
-    // 2. Write to /tmp file (standard file-based auth expectation)
-    // 3. Point GOOGLE_APPLICATION_CREDENTIALS to it
+    // 2. Write to /tmp file
+    // 3. Pass keyFilename explicitly to Storage constructor
     const googleCredentials = process.env.GOOGLE_CREDENTIALS;
     if (googleCredentials) {
         try {
@@ -27,9 +27,13 @@ async function getStorageClient(): Promise<Storage> {
 
             // Only write if not already there or to overwrite potential stale data
             fs.writeFileSync(keyFilePath, googleCredentials);
+            console.log(`✓ Wrote credentials to ${keyFilePath}`);
 
-            process.env.GOOGLE_APPLICATION_CREDENTIALS = keyFilePath;
-            console.log(`✓ Wrote credentials to ${keyFilePath} and set GOOGLE_APPLICATION_CREDENTIALS`);
+            storageInstance = new Storage({
+                projectId,
+                keyFilename: keyFilePath
+            });
+            return storageInstance;
 
         } catch (error) {
             console.error('❌ Failed to write credentials file:', error);
@@ -38,7 +42,7 @@ async function getStorageClient(): Promise<Storage> {
         console.log('⚠️ GOOGLE_CREDENTIALS env var not found, relying on default environment setup...');
     }
 
-    // Now standard initialization works for both WIF and Service Accounts
+    // Fallback standard initialization (ADC)
     storageInstance = new Storage({ projectId });
     return storageInstance;
 }
