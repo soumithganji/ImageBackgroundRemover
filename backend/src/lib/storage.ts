@@ -1,6 +1,12 @@
 import { Storage } from '@google-cloud/storage';
+import { GoogleAuth } from 'google-auth-library';
 
-function getStorageClient(): Storage {
+// Cache the storage instance
+let storageInstance: Storage | null = null;
+
+async function getStorageClient(): Promise<Storage> {
+    if (storageInstance) return storageInstance;
+
     const projectId = process.env.GCS_PROJECT_ID;
 
     if (!projectId) {
@@ -8,25 +14,34 @@ function getStorageClient(): Storage {
     }
 
     // Support for Workload Identity Federation via Env Var
-    // Vercel doesn't filesystem persistent, so we pass the JSON config as an Env Var
     const googleCredentials = process.env.GOOGLE_CREDENTIALS;
     if (googleCredentials) {
         try {
+            console.log('✓ Found GOOGLE_CREDENTIALS, initializing GoogleAuth...');
             const credentials = JSON.parse(googleCredentials);
-            console.log('✓ Found GOOGLE_CREDENTIALS, using for auth');
-            return new Storage({
-                projectId,
+
+            const auth = new GoogleAuth({
                 credentials,
+                projectId,
+                scopes: 'https://www.googleapis.com/auth/cloud-platform',
             });
+
+            const authClient = await auth.getClient();
+            console.log('✓ Auth client created successfully');
+
+            storageInstance = new Storage({
+                projectId,
+                authClient: authClient as any, // Type compatibility
+            });
+            return storageInstance;
         } catch (error) {
-            console.error('❌ Failed to parse GOOGLE_CREDENTIALS:', error);
+            console.error('❌ Failed to initialize with GOOGLE_CREDENTIALS:', error);
         }
     }
 
-    // Fallback to ADC (standard lookup)
-    // The library will automatically look for GOOGLE_APPLICATION_CREDENTIALS
-    // or other standard authentication methods.
-    return new Storage({ projectId });
+    console.log('⚠️ Falling back to default credentials (ADC)...');
+    storageInstance = new Storage({ projectId });
+    return storageInstance;
 }
 
 function getBucketName(): string {
@@ -43,7 +58,7 @@ export async function uploadImage(
     fileName: string,
     contentType: string = 'image/png'
 ): Promise<string> {
-    const storage = getStorageClient();
+    const storage = await getStorageClient();
     const bucket = storage.bucket(getBucketName());
     const file = bucket.file(fileName);
 
@@ -59,7 +74,7 @@ export async function uploadImage(
 
 // Delete image from GCS
 export async function deleteImage(fileName: string): Promise<void> {
-    const storage = getStorageClient();
+    const storage = await getStorageClient();
     const bucket = storage.bucket(getBucketName());
     const file = bucket.file(fileName);
 
@@ -74,7 +89,7 @@ export async function deleteImage(fileName: string): Promise<void> {
 
 // Check if file exists
 export async function fileExists(fileName: string): Promise<boolean> {
-    const storage = getStorageClient();
+    const storage = await getStorageClient();
     const bucket = storage.bucket(getBucketName());
     const file = bucket.file(fileName);
 
