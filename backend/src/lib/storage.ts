@@ -1,5 +1,5 @@
 import { Storage } from '@google-cloud/storage';
-import { ExternalAccountClient } from 'google-auth-library';
+import { IdentityPoolClient } from 'google-auth-library';
 
 // Check if running in Vercel serverless environment
 function isVercelEnvironment(): boolean {
@@ -27,28 +27,24 @@ async function getStorageClient(): Promise<Storage> {
         // Dynamically import @vercel/oidc to avoid issues in local dev
         const { getVercelOidcToken } = await import('@vercel/oidc');
 
-        // Create auth client with subject token supplier
-        const authClient = ExternalAccountClient.fromJSON({
+        // Create IdentityPoolClient with subject token supplier
+        const authClient = new IdentityPoolClient({
             type: 'external_account',
             audience: `//iam.googleapis.com/${workloadIdentityProvider}`,
             subject_token_type: 'urn:ietf:params:oauth:token-type:jwt',
             token_url: 'https://sts.googleapis.com/v1/token',
             service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:generateAccessToken`,
             subject_token_supplier: {
-                // Context parameter is required by SubjectTokenSupplier interface
-                getSubjectToken: async (_context: unknown) => {
-                    return await getVercelOidcToken();
+                getSubjectToken: async () => {
+                    const token = await getVercelOidcToken();
+                    console.log('✓ Got Vercel OIDC token');
+                    return token;
                 },
             },
         });
 
-        if (!authClient) {
-            throw new Error('Failed to create ExternalAccountClient');
-        }
-
         console.log('✓ Initialized GCS with Workload Identity Federation');
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return new Storage({
             projectId,
             authClient: authClient as any,
