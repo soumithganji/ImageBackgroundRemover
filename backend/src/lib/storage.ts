@@ -1,9 +1,61 @@
 import { Storage } from '@google-cloud/storage';
-import { IdentityPoolClient } from 'google-auth-library';
 
 // Check if running in Vercel serverless environment
 function isVercelEnvironment(): boolean {
     return !!process.env.VERCEL;
+}
+
+async function exchangeOidcTokenForGcpToken(
+    oidcToken: string,
+    workloadIdentityProvider: string,
+    serviceAccountEmail: string
+): Promise<string> {
+    // Step 1: Exchange Vercel OIDC token for GCP STS token
+    const stsResponse = await fetch('https://sts.googleapis.com/v1/token', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+            grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+            audience: `//iam.googleapis.com/${workloadIdentityProvider}`,
+            scope: 'https://www.googleapis.com/auth/cloud-platform',
+            requested_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+            subject_token_type: 'urn:ietf:params:oauth:token-type:jwt',
+            subject_token: oidcToken,
+        }),
+    });
+
+    if (!stsResponse.ok) {
+        const error = await stsResponse.text();
+        throw new Error(`STS token exchange failed: ${error}`);
+    }
+
+    const stsResult = await stsResponse.json() as { access_token: string };
+    const federatedToken = stsResult.access_token;
+
+    // Step 2: Use federated token to impersonate service account
+    const impersonateResponse = await fetch(
+        `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:generateAccessToken`,
+        {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${federatedToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                scope: ['https://www.googleapis.com/auth/cloud-platform'],
+            }),
+        }
+    );
+
+    if (!impersonateResponse.ok) {
+        const error = await impersonateResponse.text();
+        throw new Error(`Service account impersonation failed: ${error}`);
+    }
+
+    const impersonateResult = await impersonateResponse.json() as { accessToken: string };
+    return impersonateResult.accessToken;
 }
 
 async function getStorageClient(): Promise<Storage> {
@@ -24,30 +76,23 @@ async function getStorageClient(): Promise<Storage> {
             );
         }
 
-        // Dynamically import @vercel/oidc to avoid issues in local dev
+        // Get Vercel OIDC token
         const { getVercelOidcToken } = await import('@vercel/oidc');
+        const oidcToken = await getVercelOidcToken();
+        console.log('✓ Got Vercel OIDC token');
 
-        // Create IdentityPoolClient with subject token supplier
-        const authClient = new IdentityPoolClient({
-            type: 'external_account',
-            audience: `//iam.googleapis.com/${workloadIdentityProvider}`,
-            subject_token_type: 'urn:ietf:params:oauth:token-type:jwt',
-            token_url: 'https://sts.googleapis.com/v1/token',
-            service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:generateAccessToken`,
-            subject_token_supplier: {
-                getSubjectToken: async () => {
-                    const token = await getVercelOidcToken();
-                    console.log('✓ Got Vercel OIDC token');
-                    return token;
-                },
-            },
-        });
+        // Exchange for GCP access token
+        const accessToken = await exchangeOidcTokenForGcpToken(
+            oidcToken,
+            workloadIdentityProvider,
+            serviceAccountEmail
+        );
+        console.log('✓ Got GCP access token via WIF');
 
-        console.log('✓ Initialized GCS with Workload Identity Federation');
-
+        // Create Storage client with access token
         return new Storage({
             projectId,
-            authClient: authClient as any,
+            token: accessToken,
         });
     }
 
