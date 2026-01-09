@@ -1,16 +1,27 @@
-import { Storage } from '@google-cloud/storage';
-import { OAuth2Client } from 'google-auth-library';
+// Direct GCS API implementation using fetch - bypasses google-cloud/storage library
+// to avoid auth library compatibility issues with Vercel OIDC
 
 // Check if running in Vercel serverless environment
 function isVercelEnvironment(): boolean {
     return !!process.env.VERCEL;
 }
 
-async function exchangeOidcTokenForGcpToken(
-    oidcToken: string,
-    workloadIdentityProvider: string,
-    serviceAccountEmail: string
-): Promise<string> {
+let cachedAccessToken: { token: string; expiresAt: number } | null = null;
+
+async function getGcpAccessToken(): Promise<string> {
+    // Return cached token if still valid (with 5 min buffer)
+    if (cachedAccessToken && cachedAccessToken.expiresAt > Date.now() + 300000) {
+        return cachedAccessToken.token;
+    }
+
+    const serviceAccountEmail = process.env.GCS_SERVICE_ACCOUNT_EMAIL!;
+    const workloadIdentityProvider = process.env.GCS_WORKLOAD_IDENTITY_POOL_PROVIDER!;
+
+    // Get Vercel OIDC token
+    const { getVercelOidcToken } = await import('@vercel/oidc');
+    const oidcToken = await getVercelOidcToken();
+    console.log('✓ Got Vercel OIDC token');
+
     // Step 1: Exchange Vercel OIDC token for GCP STS token
     const stsResponse = await fetch('https://sts.googleapis.com/v1/token', {
         method: 'POST',
@@ -33,19 +44,19 @@ async function exchangeOidcTokenForGcpToken(
     }
 
     const stsResult = await stsResponse.json() as { access_token: string };
-    const federatedToken = stsResult.access_token;
+    console.log('✓ Got STS federated token');
 
-    // Step 2: Use federated token to impersonate service account
+    // Step 2: Impersonate service account
     const impersonateResponse = await fetch(
         `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:generateAccessToken`,
         {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${federatedToken}`,
+                'Authorization': `Bearer ${stsResult.access_token}`,
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                scope: ['https://www.googleapis.com/auth/cloud-platform'],
+                scope: ['https://www.googleapis.com/auth/devstorage.full_control'],
             }),
         }
     );
@@ -55,58 +66,16 @@ async function exchangeOidcTokenForGcpToken(
         throw new Error(`Service account impersonation failed: ${error}`);
     }
 
-    const impersonateResult = await impersonateResponse.json() as { accessToken: string };
+    const impersonateResult = await impersonateResponse.json() as { accessToken: string; expireTime: string };
+    console.log('✓ Got GCP access token via WIF');
+
+    // Cache the token
+    cachedAccessToken = {
+        token: impersonateResult.accessToken,
+        expiresAt: new Date(impersonateResult.expireTime).getTime(),
+    };
+
     return impersonateResult.accessToken;
-}
-
-async function getStorageClient(): Promise<Storage> {
-    const projectId = process.env.GCS_PROJECT_ID;
-
-    if (!projectId) {
-        throw new Error('GCS_PROJECT_ID environment variable is not set');
-    }
-
-    // Workload Identity Federation for Vercel
-    if (isVercelEnvironment()) {
-        const serviceAccountEmail = process.env.GCS_SERVICE_ACCOUNT_EMAIL;
-        const workloadIdentityProvider = process.env.GCS_WORKLOAD_IDENTITY_POOL_PROVIDER;
-
-        if (!serviceAccountEmail || !workloadIdentityProvider) {
-            throw new Error(
-                'Missing WIF config: GCS_SERVICE_ACCOUNT_EMAIL and GCS_WORKLOAD_IDENTITY_POOL_PROVIDER are required in Vercel'
-            );
-        }
-
-        // Get Vercel OIDC token
-        const { getVercelOidcToken } = await import('@vercel/oidc');
-        const oidcToken = await getVercelOidcToken();
-        console.log('✓ Got Vercel OIDC token');
-
-        // Exchange for GCP access token
-        const accessToken = await exchangeOidcTokenForGcpToken(
-            oidcToken,
-            workloadIdentityProvider,
-            serviceAccountEmail
-        );
-        console.log('✓ Got GCP access token via WIF');
-
-        // Create an OAuth2Client with the access token
-        const oauth2Client = new OAuth2Client();
-        oauth2Client.setCredentials({
-            access_token: accessToken,
-        });
-
-        // Create Storage client with the OAuth2 client
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return new Storage({
-            projectId,
-            authClient: oauth2Client as any,
-        });
-    }
-
-    // Local development: use Application Default Credentials (ADC)
-    console.log('⚡ Using Application Default Credentials (local dev)');
-    return new Storage({ projectId });
 }
 
 function getBucketName(): string {
@@ -117,49 +86,111 @@ function getBucketName(): string {
     return bucketName;
 }
 
-// Upload image to GCS
+// Upload image to GCS using direct API call
 export async function uploadImage(
     imageBuffer: Buffer,
     fileName: string,
     contentType: string = 'image/png'
 ): Promise<string> {
-    const storage = await getStorageClient();
-    const bucket = storage.bucket(getBucketName());
-    const file = bucket.file(fileName);
+    const bucketName = getBucketName();
 
-    await file.save(imageBuffer, {
-        metadata: {
-            contentType,
-        },
-    });
+    if (isVercelEnvironment()) {
+        // Use direct GCS JSON API
+        const accessToken = await getGcpAccessToken();
 
-    // Return public URL
-    return `https://storage.googleapis.com/${getBucketName()}/${fileName}`;
+        const uploadUrl = `https://storage.googleapis.com/upload/storage/v1/b/${bucketName}/o?uploadType=media&name=${encodeURIComponent(fileName)}`;
+
+        const response = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': contentType,
+            },
+            body: imageBuffer,
+        });
+
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`GCS upload failed: ${error}`);
+        }
+
+        console.log('✓ Uploaded to GCS via direct API');
+        return `https://storage.googleapis.com/${bucketName}/${fileName}`;
+    } else {
+        // Local development: use Storage library with ADC
+        const { Storage } = await import('@google-cloud/storage');
+        const storage = new Storage({ projectId: process.env.GCS_PROJECT_ID });
+        const bucket = storage.bucket(bucketName);
+        const file = bucket.file(fileName);
+
+        await file.save(imageBuffer, {
+            metadata: { contentType },
+        });
+
+        return `https://storage.googleapis.com/${bucketName}/${fileName}`;
+    }
 }
 
 // Delete image from GCS
 export async function deleteImage(fileName: string): Promise<void> {
-    const storage = await getStorageClient();
-    const bucket = storage.bucket(getBucketName());
-    const file = bucket.file(fileName);
+    const bucketName = getBucketName();
 
-    try {
-        await file.delete();
-    } catch (error: unknown) {
-        if (error && typeof error === 'object' && 'code' in error && error.code !== 404) {
-            throw error;
+    if (isVercelEnvironment()) {
+        const accessToken = await getGcpAccessToken();
+        const deleteUrl = `https://storage.googleapis.com/storage/v1/b/${bucketName}/o/${encodeURIComponent(fileName)}`;
+
+        const response = await fetch(deleteUrl, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+            },
+        });
+
+        // 404 is ok - file doesn't exist
+        if (!response.ok && response.status !== 404) {
+            const error = await response.text();
+            throw new Error(`GCS delete failed: ${error}`);
+        }
+    } else {
+        const { Storage } = await import('@google-cloud/storage');
+        const storage = new Storage({ projectId: process.env.GCS_PROJECT_ID });
+        const bucket = storage.bucket(bucketName);
+        const file = bucket.file(fileName);
+
+        try {
+            await file.delete();
+        } catch (error: unknown) {
+            if (error && typeof error === 'object' && 'code' in error && error.code !== 404) {
+                throw error;
+            }
         }
     }
 }
 
 // Check if file exists
 export async function fileExists(fileName: string): Promise<boolean> {
-    const storage = await getStorageClient();
-    const bucket = storage.bucket(getBucketName());
-    const file = bucket.file(fileName);
+    const bucketName = getBucketName();
 
-    const [exists] = await file.exists();
-    return exists;
+    if (isVercelEnvironment()) {
+        const accessToken = await getGcpAccessToken();
+        const metadataUrl = `https://storage.googleapis.com/storage/v1/b/${bucketName}/o/${encodeURIComponent(fileName)}`;
+
+        const response = await fetch(metadataUrl, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+            },
+        });
+
+        return response.ok;
+    } else {
+        const { Storage } = await import('@google-cloud/storage');
+        const storage = new Storage({ projectId: process.env.GCS_PROJECT_ID });
+        const bucket = storage.bucket(bucketName);
+        const file = bucket.file(fileName);
+        const [exists] = await file.exists();
+        return exists;
+    }
 }
 
 // Get public URL
