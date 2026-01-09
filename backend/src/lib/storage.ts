@@ -1,5 +1,7 @@
 import { Storage } from '@google-cloud/storage';
-import { GoogleAuth } from 'google-auth-library';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 // Cache the storage instance
 let storageInstance: Storage | null = null;
@@ -13,33 +15,30 @@ async function getStorageClient(): Promise<Storage> {
         throw new Error('GCS_PROJECT_ID environment variable is not set');
     }
 
-    // Support for Workload Identity Federation via Env Var
+    // Workload Identity / Credentials Strategy for Vercel:
+    // 1. Read JSON from Env Var
+    // 2. Write to /tmp file (standard file-based auth expectation)
+    // 3. Point GOOGLE_APPLICATION_CREDENTIALS to it
     const googleCredentials = process.env.GOOGLE_CREDENTIALS;
     if (googleCredentials) {
         try {
-            console.log('✓ Found GOOGLE_CREDENTIALS, initializing GoogleAuth...');
-            const credentials = JSON.parse(googleCredentials);
+            const tmpDir = os.tmpdir();
+            const keyFilePath = path.join(tmpDir, 'gcp-credentials.json');
 
-            const auth = new GoogleAuth({
-                credentials,
-                projectId,
-                scopes: 'https://www.googleapis.com/auth/cloud-platform',
-            });
+            // Only write if not already there or to overwrite potential stale data
+            fs.writeFileSync(keyFilePath, googleCredentials);
 
-            const authClient = await auth.getClient();
-            console.log('✓ Auth client created successfully');
+            process.env.GOOGLE_APPLICATION_CREDENTIALS = keyFilePath;
+            console.log(`✓ Wrote credentials to ${keyFilePath} and set GOOGLE_APPLICATION_CREDENTIALS`);
 
-            storageInstance = new Storage({
-                projectId,
-                authClient: authClient as any, // Type compatibility
-            });
-            return storageInstance;
         } catch (error) {
-            console.error('❌ Failed to initialize with GOOGLE_CREDENTIALS:', error);
+            console.error('❌ Failed to write credentials file:', error);
         }
+    } else {
+        console.log('⚠️ GOOGLE_CREDENTIALS env var not found, relying on default environment setup...');
     }
 
-    console.log('⚠️ Falling back to default credentials (ADC)...');
+    // Now standard initialization works for both WIF and Service Accounts
     storageInstance = new Storage({ projectId });
     return storageInstance;
 }
