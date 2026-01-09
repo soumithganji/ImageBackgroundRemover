@@ -35,7 +35,8 @@ async function getStorageClient(): Promise<Storage> {
             token_url: 'https://sts.googleapis.com/v1/token',
             service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccountEmail}:generateAccessToken`,
             subject_token_supplier: {
-                getSubjectToken: async () => {
+                // Context parameter is required by SubjectTokenSupplier interface
+                getSubjectToken: async (_context: unknown) => {
                     return await getVercelOidcToken();
                 },
             },
