@@ -7,7 +7,23 @@ function getStorageClient(): Storage {
         throw new Error('GCS_PROJECT_ID environment variable is not set');
     }
 
-    // Workload Identity Federation / ADC
+    // Support for Workload Identity Federation via Env Var
+    // Vercel doesn't filesystem persistent, so we pass the JSON config as an Env Var
+    const googleCredentials = process.env.GOOGLE_CREDENTIALS;
+    if (googleCredentials) {
+        try {
+            const credentials = JSON.parse(googleCredentials);
+            console.log('✓ Found GOOGLE_CREDENTIALS, using for auth');
+            return new Storage({
+                projectId,
+                credentials,
+            });
+        } catch (error) {
+            console.error('❌ Failed to parse GOOGLE_CREDENTIALS:', error);
+        }
+    }
+
+    // Fallback to ADC (standard lookup)
     // The library will automatically look for GOOGLE_APPLICATION_CREDENTIALS
     // or other standard authentication methods.
     return new Storage({ projectId });
