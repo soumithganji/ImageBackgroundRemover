@@ -1,4 +1,5 @@
 import { Storage } from '@google-cloud/storage';
+import { OAuth2Client } from 'google-auth-library';
 
 // Check if running in Vercel serverless environment
 function isVercelEnvironment(): boolean {
@@ -89,10 +90,17 @@ async function getStorageClient(): Promise<Storage> {
         );
         console.log('✓ Got GCP access token via WIF');
 
-        // Create Storage client with access token
+        // Create an OAuth2Client with the access token
+        const oauth2Client = new OAuth2Client();
+        oauth2Client.setCredentials({
+            access_token: accessToken,
+        });
+
+        // Create Storage client with the OAuth2 client
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return new Storage({
             projectId,
-            token: accessToken,
+            authClient: oauth2Client as any,
         });
     }
 
