@@ -39,6 +39,14 @@ export default function App() {
                 throw new Error(data.error || 'Failed to process image');
             }
 
+            // Preload the processed image before showing it
+            await new Promise<void>((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve();
+                img.onerror = () => resolve(); // Continue even if preload fails
+                img.src = data.processedUrl;
+            });
+
             setImageData({
                 imageId: data.imageId,
                 originalUrl,

@@ -389,6 +389,7 @@ body {
 /* Processing Overlay */
 .image-wrapper.processing {
   position: relative;
+  background: var(--bg-light);
 }
 
 .image-wrapper img.faded {
